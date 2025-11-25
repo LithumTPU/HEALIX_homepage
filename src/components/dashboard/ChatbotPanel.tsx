@@ -111,15 +111,19 @@ export function ChatbotPanel() {
   };
 
   return (
-    <Card className="flex h-[500px] flex-col border-slate-200 bg-white shadow-sm">
+    <Card className="flex h-full max-h-[520px] flex-col overflow-hidden border-slate-200 bg-white shadow-sm">
       <CardHeader className="border-b border-slate-100 bg-slate-50/50 pb-4">
         <CardTitle className="flex items-center gap-2 text-lg font-bold text-slate-800">
           <Bot className="h-5 w-5 text-purple-600" />
           AI Assistant
         </CardTitle>
       </CardHeader>
-      <CardContent className="flex flex-1 flex-col p-0">
-        <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto p-4">
+      <CardContent className="flex flex-1 flex-col overflow-hidden p-0">
+        <div
+          ref={scrollRef}
+          className="flex-1 space-y-4 overflow-y-auto p-4"
+          style={{ maxHeight: '100%' }}
+        >
             {messages.map((msg, i) => (
                 <div key={i} className={cn("flex w-full", msg.role === 'user' ? "justify-end" : "justify-start")}>
                     <div

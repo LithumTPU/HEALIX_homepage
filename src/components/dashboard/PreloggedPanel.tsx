@@ -72,43 +72,48 @@ export function PreloggedPanel() {
     const pid = selection ? selection.split('|')[0] : (options[0]?.pid || 'unknown');
      setSending(true);
      try {
-        // write the message (keeps current behaviour; can be changed to patient-specific path later)
-      await set(ref(db, 'Doctor_message'), message);
+        console.info(`[SendToPatient] Writing message for ${pid}`);
+        const firebaseToast = toast.loading('Updating patient feed...', { duration: 4000 });
+        await set(ref(db, 'Doctor_message'), message);
+        toast.success('Message synced with Firebase', { id: firebaseToast, duration: 2000 });
 
-      // Generate audio and download: show clear progress
-      toast.loading('Generating audio...');
-      const resp = await fetch(TTS_API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: message, voice: 'Aaliyah-PlayAI' })
-      });
+        console.info('[SendToPatient] Requesting voice playback');
+        const voiceToast = toast.loading('Generating WAV...', { duration: 4000 });
+        const resp = await fetch(TTS_API_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: message, voice: 'Aaliyah-PlayAI' })
+        });
 
-      if (!resp.ok) {
-        let errText = `TTS server returned ${resp.status}`;
-        try {
-          const jb = await resp.json();
-          errText = jb?.error || errText;
-        } catch {}
-        toast.error(`Audio generation failed: ${errText}`);
-      } else {
+        if (!resp.ok) {
+          let errText = `TTS server returned ${resp.status}`;
+          try {
+            const payload = await resp.json();
+            errText = payload?.error || errText;
+          } catch {
+            // ignore
+          }
+          toast.error(`Audio generation failed: ${errText}`, { id: voiceToast });
+          throw new Error(errText);
+        }
+
         const blob = await resp.blob();
-        const url = window.URL.createObjectURL(blob);
-        const filename = `healix_message_${pid}_${new Date().toISOString().replace(/[:.]/g, '-')}.wav`;
+        const filename = `healix_message_${pid}_${Date.now()}.wav`;
+        const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
         a.download = filename;
         document.body.appendChild(a);
         a.click();
         a.remove();
-        window.URL.revokeObjectURL(url);
-        toast.success("Audio generated & download started");
-        // Clear message only after successful generation to avoid data loss
+        URL.revokeObjectURL(url);
+
+        toast.success('Voice file downloaded', { id: voiceToast, duration: 2000 });
+        toast('Message sent to patient', { duration: 2000 });
         setMessage('');
-      }
-      toast('Message sent to patient', { duration: 2000 });
      } catch (err) {
-        console.error(err);
-        toast.error("Failed to send message");
+        console.error('[SendToPatient] flow failed', err);
+        toast.error("Failed to send message or start TTS");
      } finally {
          setSending(false);
      }
@@ -219,7 +224,7 @@ export function PreloggedPanel() {
                     <Send className="h-4 w-4 text-white" />
                 </Button>
              </div>
-             <p className="text-center text-xs text-slate-400">Pressing send generates audio via TTS</p>
+             <p className="text-center text-xs text-slate-400">Pressing send streams the patient voice message instantly</p>
          </div>
  
          <Button variant="outline" className="w-full" onClick={handleExport}>

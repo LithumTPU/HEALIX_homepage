@@ -13,8 +13,7 @@ Staff can enter clinical notes, track medication administration, and log next do
 
 and add a login page with roles. 
 
-Add functionalities for chatbot, email sending logic, and talk to patient which downloads the generated audio file to the user's computer.
 
 
 
-fix funtionlies in tts voice genration and chatbot autoextending.
+

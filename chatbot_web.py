@@ -24,7 +24,6 @@ def run_chatbot(prompt_text: str):
             temperature=1,
             max_completion_tokens=80,
             top_p=0.2,
-            reasoning_effort="medium",
             stream=True,
             stop=None
         )

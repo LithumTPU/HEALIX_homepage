@@ -7,9 +7,9 @@ import math
 import struct
 import wave
 import sys
+import uuid
 
-# Place your Groq API key here (in-code embed requested). Replace the placeholder with the real key.
-GROQ_API_KEY = "gsk_YOUR_REAL_GROQ_KEY_HERE"
+GROQ_API_KEY = "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"
 
 try:
     from groq import Groq
@@ -18,6 +18,35 @@ except Exception:
 
 app = Flask(__name__)
 CORS(app)
+
+def generate_fallback_audio(temp_path, text, request_id):
+    """Generate fallback audio when TTS service fails"""
+    try:
+        duration = min(8, max(1, len(text) // 20))
+        sample_rate = 16000
+        num_samples = duration * sample_rate
+        freq = 440.0
+        amplitude = 32767 * 0.3
+        
+        with wave.open(temp_path, 'w') as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(sample_rate)
+            for i in range(num_samples):
+                val = int(amplitude * math.sin(2 * math.pi * freq * (i / sample_rate)))
+                wf.writeframes(struct.pack('<h', val))
+        
+        print(f"[TTS][{request_id}] Generated fallback WAV ({len(text)} chars)")
+        
+        return send_file(
+            temp_path,
+            as_attachment=True,
+            download_name='speech.wav',
+            mimetype='audio/wav'
+        )
+    except Exception as fallback_error:
+        print(f"[TTS][{request_id}] Fallback also failed: {str(fallback_error)}")
+        return jsonify({'error': 'Both TTS and fallback failed'}), 500
 
 @app.route('/api/tts', methods=['POST', 'OPTIONS'])
 def api_tts():
@@ -44,45 +73,58 @@ def api_tts():
         return response
 
     try:
-        api_key = "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"
-        if api_key and Groq is not None:
-            client = Groq(api_key=api_key)
+        request_id = uuid.uuid4().hex[:8]
+        print(f"[TTS][{request_id}] Received request, chars={len(text)} voice={voice}")
+        
+        # Check if Groq is available
+        if Groq is None:
+            print(f"[TTS][{request_id}] Groq library not available, using fallback")
+            return generate_fallback_audio(temp_path, text, request_id)
+        
+        api_key = GROQ_API_KEY
+        if not api_key or api_key == "gsk_YOUR_REAL_GROQ_KEY_HERE":
+            print(f"[TTS][{request_id}] Invalid API key, using fallback")
+            return generate_fallback_audio(temp_path, text, request_id)
+
+        print(f"[TTS][{request_id}] Attempting Groq TTS...")
+        client = Groq(api_key=api_key)
+        
+        try:
             response = client.audio.speech.create(
                 model="playai-tts",
                 voice=voice,
                 response_format="wav",
                 input=text,
             )
-            # Many SDKs provide stream_to_file helper; use if available
-            if hasattr(response, 'stream_to_file'):
-                response.stream_to_file(temp_path)
-            else:
-                # fallback: write bytes if property exists
-                audio_bytes = getattr(response, 'bytes', None)
-                if audio_bytes:
-                    with open(temp_path, 'wb') as f:
-                        f.write(audio_bytes)
-                else:
-                    # cannot get audio: return error
-                    return jsonify({'error': 'TTS generation failed'}), 500
-            return send_file(temp_path, as_attachment=True, download_name='speech.wav', mimetype='audio/wav')
-        else:
-            duration = min(8, max(1, len(text) // 20))
-            sample_rate = 16000
-            num_samples = duration * sample_rate
-            freq = 440.0
-            amplitude = 32767 * 0.3
-            with wave.open(temp_path, 'w') as wf:
-                wf.setnchannels(1)
-                wf.setsampwidth(2)
-                wf.setframerate(sample_rate)
-                for i in range(num_samples):
-                    val = int(amplitude * math.sin(2 * math.pi * freq * (i / sample_rate)))
-                    wf.writeframes(struct.pack('<h', val))
-            return send_file(temp_path, as_attachment=True, download_name='speech_simulated.wav', mimetype='audio/wav')
+            
+            # **FIXED: Use the .iter_bytes() method on the response object**
+            print(f"[TTS][{request_id}] Response type: {type(response)}")
+            
+            with open(temp_path, "wb") as f:
+                # Iterate through chunks using the correct method
+                for chunk in response.iter_bytes(): 
+                    f.write(chunk)
+            
+            print(f"[TTS][{request_id}] Successfully saved Groq TTS output")
+            
+            file_size = os.path.getsize(temp_path)
+            print(f"[TTS][{request_id}] Generated WAV via Groq ({len(text)} chars, {file_size} bytes)")
+            
+            return send_file(
+                temp_path,
+                as_attachment=True,
+                download_name='speech.wav',
+                mimetype='audio/wav'
+            )
+            
+        except Exception as groq_error:
+            # Note: The original error message "object is not iterable" would appear here.
+            print(f"[TTS][{request_id}] Groq API error: {str(groq_error)}")
+            return generate_fallback_audio(temp_path, text, request_id)
+
     except Exception as e:
         tb = traceback.format_exc()
-        print(tb)
+        print(f"[TTS] General error: {tb}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/health', methods=['GET'])
